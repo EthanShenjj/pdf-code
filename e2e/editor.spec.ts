@@ -117,7 +117,7 @@ test("exports selected PDF pages from the editor", async ({ page }) => {
   await expect(page.getByText("第 1 页，共 3 页")).toBeVisible();
   await page.getByRole("button", { name: "选择导出 PDF 页面" }).click();
   const dialog = page.getByRole("dialog", { name: "选择要导出的页面" });
-  await dialog.getByRole("button", { name: "第 2 页" }).click();
+  await dialog.getByLabel("页码范围").fill("2-3");
   const download = page.waitForEvent("download");
   await dialog.getByRole("button", { name: "导出 2 页PDF" }).click();
   await download;
