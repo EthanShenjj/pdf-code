@@ -82,12 +82,6 @@ function SignatureDialog({ onClose, onDone }: { onClose: () => void; onDone: (da
   );
 }
 
-function formatPageExpression(pages: number[]) {
-  const groups: string[] = [];
-  for (let index = 0; index < pages.length;) { const start = pages[index]; let end = start; while (pages[index + 1] === end + 1) { end = pages[++index]; } groups.push(start === end ? String(start) : `${start}-${end}`); index += 1; }
-  return groups.join(", ");
-}
-
 function parsePageExpression(value: string, pageCount: number) {
   const normalized = value.replace(/[，、]/g, ",").replace(/[–—]/g, "-").trim();
   if (!normalized) return { pages: [] as number[] };
@@ -103,12 +97,16 @@ function parsePageExpression(value: string, pageCount: number) {
 }
 
 function ExportPagesDialog({ pageCount, format, initialPage, exporting, onClose, onExport }: { pageCount: number; format: "pdf" | "image"; initialPage: number; exporting: boolean; onClose: () => void; onExport: (pages: number[]) => void }) {
-  const [selected, setSelected] = useState<Set<number>>(() => new Set([initialPage]));
+  const [selectionMode, setSelectionMode] = useState<"all" | "custom">("all");
   const [pageExpression, setPageExpression] = useState(String(initialPage));
   const [error, setError] = useState("");
-  function setPages(pages: number[]) { const sorted = [...new Set(pages)].sort((first, second) => first - second); setSelected(new Set(sorted)); setPageExpression(formatPageExpression(sorted)); setError(""); }
-  function updateExpression(value: string) { setPageExpression(value); const result = parsePageExpression(value, pageCount); if (!result.error) { setSelected(new Set(result.pages)); setError(""); } }
+  const allPages = Array.from({ length: pageCount }, (_, index) => index + 1);
+  const parsedPages = parsePageExpression(pageExpression, pageCount);
+  const selectedCount = selectionMode === "all" ? pageCount : parsedPages.pages.length;
+  function chooseMode(mode: "all" | "custom") { setSelectionMode(mode); setError(""); }
+  function updateExpression(value: string) { setPageExpression(value); if (!parsePageExpression(value, pageCount).error) setError(""); }
   function submit() {
+    if (selectionMode === "all") { onExport(allPages); return; }
     const result = parsePageExpression(pageExpression, pageCount);
     if (result.error) { setError(result.error); return; }
     if (!result.pages.length) { setError("请至少选择一页"); return; }
@@ -118,13 +116,21 @@ function ExportPagesDialog({ pageCount, format, initialPage, exporting, onClose,
   return <div className="fixed inset-0 z-50 grid place-items-center bg-[#17223b]/50 p-4" role="dialog" aria-modal="true" aria-labelledby="export-pages-title">
     <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl sm:p-6">
       <h2 id="export-pages-title" className="text-xl font-semibold">选择要导出的页面</h2>
-      <p className="mt-1 text-sm text-[#667085]">输入页码或范围，支持连续和非连续页面。</p>
-      <label className="mt-5 block text-sm font-medium text-[#344054]">页码范围<input autoFocus aria-label="页码范围" value={pageExpression} onChange={(event) => updateExpression(event.target.value)} onBlur={() => { const result = parsePageExpression(pageExpression, pageCount); if (result.error) setError(result.error); }} placeholder="例如 5-10 或 1,3,8-10" className="mt-2 h-11 w-full rounded-lg border border-[#cfd7e6] bg-white px-3 text-sm outline-none transition placeholder:text-[#98a2b3] focus:border-[#315ee7] focus:ring-2 focus:ring-[#315ee7]/10" /></label>
-      <p className="mt-2 text-xs leading-5 text-[#8a93a5]">使用逗号分隔页面，用连字符表示范围，例如 5-10。</p>
-      <div className="mt-5 flex items-center justify-between"><span className="text-xs font-medium text-[#667085]">已选 {selected.size} / {pageCount} 页</span><div className="flex gap-1"><button type="button" onClick={() => setPages(Array.from({ length: pageCount }, (_, index) => index + 1))} className="rounded-md px-2 py-1 text-xs font-medium text-[#315ee7] hover:bg-[#eef2ff]">全选</button><button type="button" onClick={() => setPages([])} className="rounded-md px-2 py-1 text-xs font-medium text-[#667085] hover:bg-[#f2f4f7]">清空</button></div></div>
-      <div className="mt-2 grid max-h-44 grid-cols-5 gap-2 overflow-y-auto rounded-xl border border-[#e3e8f2] bg-[#fafbfc] p-3" aria-label="可导出的页面">{Array.from({ length: pageCount }, (_, index) => { const number = index + 1, active = selected.has(number); return <button key={number} type="button" aria-pressed={active} aria-label={`第 ${number} 页`} onClick={() => { const next = new Set(selected); next.has(number) ? next.delete(number) : next.add(number); setPages([...next]); }} className={`h-9 rounded-lg text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315ee7] ${active ? "bg-[#315ee7] text-white shadow-sm" : "border border-[#dfe3ea] bg-white text-[#526074] hover:border-[#7b9af2] hover:text-[#315ee7]"}`}>{number}</button>; })}</div>
+      <p className="mt-1 text-sm text-[#667085]">选择导出全部页面，或指定需要的页码范围。</p>
+      <fieldset className="mt-5 space-y-3" aria-label="导出页面范围">
+        <label className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition ${selectionMode === "all" ? "border-[#315ee7] bg-[#f4f7ff]" : "border-[#e3e8f2] hover:border-[#b9c8f5]"}`}>
+          <input type="radio" name="export-page-range" checked={selectionMode === "all"} onChange={() => chooseMode("all")} className="h-4 w-4 accent-[#315ee7]" />
+          <span className="text-sm font-semibold text-[#202b42]">全部</span><span className="ml-auto text-sm text-[#667085]">共 {pageCount} 页</span>
+        </label>
+        <label className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition ${selectionMode === "custom" ? "border-[#315ee7] bg-[#f4f7ff]" : "border-[#e3e8f2] hover:border-[#b9c8f5]"}`}>
+          <input type="radio" name="export-page-range" checked={selectionMode === "custom"} onChange={() => chooseMode("custom")} className="h-4 w-4 shrink-0 accent-[#315ee7]" />
+          <span className="shrink-0 text-sm font-semibold text-[#202b42]">自定义</span>
+          <input aria-label="页码范围" disabled={selectionMode !== "custom"} value={pageExpression} onFocus={() => chooseMode("custom")} onChange={(event) => updateExpression(event.target.value)} onBlur={() => { const result = parsePageExpression(pageExpression, pageCount); if (result.error) setError(result.error); }} placeholder="例如 1-5、8、11-13" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5dce8] bg-white px-3 text-sm outline-none transition placeholder:text-[#98a2b3] focus:border-[#315ee7] focus:ring-2 focus:ring-[#315ee7]/10 disabled:cursor-not-allowed disabled:bg-[#f7f8fa]" />
+        </label>
+      </fieldset>
+      {selectionMode === "custom" && <p className="mt-3 text-xs leading-5 text-[#8a93a5]">用逗号分隔页面，用连字符表示连续范围。</p>}
       {error && <p role="alert" className="mt-3 text-sm text-red-600">{error}</p>}
-      <div className="mt-6 flex justify-end gap-2"><button type="button" disabled={exporting} onClick={onClose} className="rounded-lg px-4 py-2 text-sm hover:bg-[#f2f4f7]">取消</button><button type="button" disabled={exporting} onClick={submit} className="rounded-lg bg-[#315ee7] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2346bb]">{exporting ? "正在导出…" : `导出 ${selected.size} 页${formatName}`}</button></div>
+      <div className="mt-6 flex justify-end gap-2"><button type="button" disabled={exporting} onClick={onClose} className="rounded-lg px-4 py-2 text-sm hover:bg-[#f2f4f7]">取消</button><button type="button" disabled={exporting} onClick={submit} className="rounded-lg bg-[#315ee7] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2346bb]">{exporting ? "正在导出…" : `导出 ${selectedCount} 页${formatName}`}</button></div>
     </div>
   </div>;
 }
