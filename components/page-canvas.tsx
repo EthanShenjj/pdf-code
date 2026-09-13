@@ -23,6 +23,7 @@ export function PageCanvas({ page, assets, thumbnail = false }: Props) {
   const pageRef = useRef<HTMLDivElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
   const drawingRef = useRef<{ x: number; y: number } | null>(null);
+  const penPointsRef = useRef<{ x: number; y: number }[]>([]);
   const [viewport, setViewport] = useState<PageViewport | null>(null);
   const [textSelection, setTextSelection] = useState<TextSelection | null>(null);
   const [drawing, setDrawing] = useState<EditorObject | null>(null);
@@ -118,7 +119,7 @@ export function PageCanvas({ page, assets, thumbnail = false }: Props) {
   }
 
   function addAt(event: React.MouseEvent) {
-    if (thumbnail || tool === "select" || tool === "highlight" || tool === "image" || tool === "signature" || tool === "rect" || tool === "line" || !viewport) return;
+    if (thumbnail || tool === "select" || tool === "highlight" || tool === "image" || tool === "signature" || tool === "rect" || tool === "line" || tool === "pen" || !viewport) return;
     if (event.target instanceof Element && event.target.closest(".pdf-text-layer")) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const [x, y] = viewport.convertToPdfPoint(event.clientX - rect.left, event.clientY - rect.top);
@@ -138,19 +139,54 @@ export function PageCanvas({ page, assets, thumbnail = false }: Props) {
   }
 
   function startDrawing(event: React.PointerEvent<HTMLDivElement>) {
-    if (thumbnail || !viewport || (tool !== "rect" && tool !== "line")) return;
+    if (thumbnail || !viewport || (tool !== "rect" && tool !== "line" && tool !== "pen")) return;
     event.preventDefault();
     const start = pagePoint(event.nativeEvent);
     if (!start) return;
+    const activeTool = tool;
+    if (activeTool === "pen") {
+      penPointsRef.current = [start];
+      const penPreview = (points: { x: number; y: number }[]): EditorObject => {
+        const xs = points.map((point) => point.x), ys = points.map((point) => point.y);
+        const x = Math.min(...xs), y = Math.min(...ys);
+        return { id: "drawing-preview", pageId: page.id, type: "pen", x, y, width: Math.max(.1, Math.max(...xs) - x), height: Math.max(.1, Math.max(...ys) - y), color: "#315ee7", opacity: 1, points, strokeWidth: 2.5 };
+      };
+      setDrawing(penPreview(penPointsRef.current));
+      const move = (nextEvent: PointerEvent) => {
+        const point = pagePoint(nextEvent);
+        const points = penPointsRef.current;
+        const previous = points.at(-1);
+        if (!point || !previous || Math.hypot(point.x - previous.x, point.y - previous.y) < .75) return;
+        penPointsRef.current = [...points, point];
+        setDrawing(penPreview(penPointsRef.current));
+      };
+      const up = (nextEvent: PointerEvent) => {
+        const point = pagePoint(nextEvent);
+        const points = penPointsRef.current;
+        const previous = points.at(-1);
+        if (point && previous && Math.hypot(point.x - previous.x, point.y - previous.y) >= .1) points.push(point);
+        penPointsRef.current = [];
+        setDrawing(null);
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        if (points.length < 2) return;
+        const object = { ...penPreview(points), id: crypto.randomUUID() };
+        commit((value) => ({ ...value, objects: [...value.objects, object] }));
+        select(object.id);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      return;
+    }
     drawingRef.current = start;
-    const preview: EditorObject = { id: "drawing-preview", pageId: page.id, type: tool, x: start.x, y: start.y, width: 0, height: 0, color: "#315ee7", opacity: 1 };
+    const preview: EditorObject = { id: "drawing-preview", pageId: page.id, type: activeTool, x: start.x, y: start.y, width: 0, height: 0, color: "#315ee7", opacity: 1 };
     setDrawing(preview);
 
     const move = (nextEvent: PointerEvent) => {
       const end = pagePoint(nextEvent);
       const origin = drawingRef.current;
       if (!end || !origin) return;
-      setDrawing({ ...preview, x: tool === "rect" ? Math.min(origin.x, end.x) : origin.x, y: tool === "rect" ? Math.min(origin.y, end.y) : origin.y, width: tool === "rect" ? Math.abs(end.x - origin.x) : end.x - origin.x, height: tool === "rect" ? Math.abs(end.y - origin.y) : end.y - origin.y });
+      setDrawing({ ...preview, x: activeTool === "rect" ? Math.min(origin.x, end.x) : origin.x, y: activeTool === "rect" ? Math.min(origin.y, end.y) : origin.y, width: activeTool === "rect" ? Math.abs(end.x - origin.x) : end.x - origin.x, height: activeTool === "rect" ? Math.abs(end.y - origin.y) : end.y - origin.y });
     };
     const up = (nextEvent: PointerEvent) => {
       const end = pagePoint(nextEvent);
@@ -163,7 +199,7 @@ export function PageCanvas({ page, assets, thumbnail = false }: Props) {
       const width = end.x - origin.x;
       const height = end.y - origin.y;
       if (Math.abs(width) < 2 && Math.abs(height) < 2) return;
-      const object: EditorObject = { ...preview, id: crypto.randomUUID(), x: tool === "rect" ? Math.min(origin.x, end.x) : origin.x, y: tool === "rect" ? Math.min(origin.y, end.y) : origin.y, width: tool === "rect" ? Math.abs(width) : width, height: tool === "rect" ? Math.abs(height) : height };
+      const object: EditorObject = { ...preview, id: crypto.randomUUID(), x: activeTool === "rect" ? Math.min(origin.x, end.x) : origin.x, y: activeTool === "rect" ? Math.min(origin.y, end.y) : origin.y, width: activeTool === "rect" ? Math.abs(width) : width, height: activeTool === "rect" ? Math.abs(height) : height };
       commit((value) => ({ ...value, objects: [...value.objects, object] }));
       select(object.id);
     };
@@ -221,11 +257,13 @@ export function PageCanvas({ page, assets, thumbnail = false }: Props) {
     select(object.id);
     const start = [event.clientX, event.clientY];
     const original = [object.x, object.y];
+    const originalPoints = object.points;
     const move = (nextEvent: PointerEvent) => {
       if (!viewport) return;
       const origin = viewport.convertToPdfPoint(0, 0);
       const delta = viewport.convertToPdfPoint(nextEvent.clientX - start[0], nextEvent.clientY - start[1]);
-      useEditor.setState((state) => ({ draft: { ...state.draft, objects: state.draft.objects.map((item) => item.id === object.id ? { ...item, x: original[0] + delta[0] - origin[0], y: original[1] + delta[1] - origin[1] } : item) } }));
+      const offsetX = delta[0] - origin[0], offsetY = delta[1] - origin[1];
+      useEditor.setState((state) => ({ draft: { ...state.draft, objects: state.draft.objects.map((item) => item.id === object.id ? { ...item, x: original[0] + offsetX, y: original[1] + offsetY, points: item.type === "pen" ? originalPoints?.map((point) => ({ x: point.x + offsetX, y: point.y + offsetY })) : item.points } : item) } }));
     };
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", move);
@@ -239,7 +277,7 @@ export function PageCanvas({ page, assets, thumbnail = false }: Props) {
       aria-busy={!viewport && !error}
       onClick={addAt}
       onPointerDown={startDrawing}
-      className={`relative shrink-0 overflow-hidden bg-white ${thumbnail ? "" : "paper-shadow"}`}
+      className={`relative shrink-0 overflow-hidden bg-white ${thumbnail ? "" : "paper-shadow"} ${tool === "pen" ? "touch-none" : ""}`}
       style={{ width: viewport?.width || fallbackWidth, height: viewport?.height || fallbackHeight }}
     >
       <canvas ref={canvasRef} />
@@ -250,7 +288,9 @@ export function PageCanvas({ page, assets, thumbnail = false }: Props) {
         const box = bounds(object);
         const preview = object.id === "drawing-preview";
         const selected = !preview && object.id === selectedId;
-        return <div key={object.id} data-editor-object-type={preview ? undefined : object.type} data-editor-preview={preview || undefined} onPointerDown={preview ? undefined : (event) => startDrag(event, object)} onDoubleClick={() => { if (object.type === "text") { const text = prompt("输入文字", object.text); if (text !== null) updateObject(object.id, { text }); } }} className={`absolute z-20 touch-none ${selected ? "ring-2 ring-[#315ee7] ring-offset-2" : ""}`} style={{ left: box.left, top: box.top, width: Math.max(box.width, 2), height: Math.max(box.height, 2), opacity: object.opacity, color: object.color, cursor: preview ? "crosshair" : "move", pointerEvents: preview ? "none" : undefined }}>{object.type === "text" ? <span style={{ fontSize: (object.fontSize || 18) * zoom, whiteSpace: "nowrap" }}>{object.text}</span> : object.type === "image" || object.type === "signature" ? <img draggable={false} src={object.dataUrl} alt="新增图片" className="h-full w-full object-contain" /> : object.type === "line" ? <svg className="h-full w-full overflow-visible"><line x1={box.startX} y1={box.startY} x2={box.endX} y2={box.endY} stroke={object.color} strokeWidth="2" vectorEffect="non-scaling-stroke" /></svg> : <div className="h-full w-full" style={{ border: object.type === "rect" ? `2px solid ${object.color}` : undefined, background: object.type === "highlight" ? object.color : undefined }} />}</div>;
+        const penPadding = object.type === "pen" ? Math.max(4, (object.strokeWidth || 2.5) * renderZoom) : 0;
+        const penPoints = object.type === "pen" ? object.points?.map((point) => { const [x, y] = viewport.convertToViewportPoint(point.x, point.y); return `${x - box.left + penPadding},${y - box.top + penPadding}`; }).join(" ") : "";
+        return <div key={object.id} data-editor-object-type={preview ? undefined : object.type} data-editor-preview={preview || undefined} onPointerDown={preview ? undefined : (event) => startDrag(event, object)} onDoubleClick={() => { if (object.type === "text") { const text = prompt("输入文字", object.text); if (text !== null) updateObject(object.id, { text }); } }} className={`absolute z-20 touch-none ${selected ? "ring-2 ring-[#315ee7] ring-offset-2" : ""}`} style={{ left: box.left - penPadding, top: box.top - penPadding, width: Math.max(box.width, 2) + penPadding * 2, height: Math.max(box.height, 2) + penPadding * 2, opacity: object.opacity, color: object.color, cursor: preview ? "crosshair" : "move", pointerEvents: preview ? "none" : undefined }}>{object.type === "text" ? <span style={{ fontSize: (object.fontSize || 18) * zoom, whiteSpace: "nowrap" }}>{object.text}</span> : object.type === "image" || object.type === "signature" ? <img draggable={false} src={object.dataUrl} alt="新增图片" className="h-full w-full object-contain" /> : object.type === "line" ? <svg className="h-full w-full overflow-visible"><line x1={box.startX} y1={box.startY} x2={box.endX} y2={box.endY} stroke={object.color} strokeWidth="2" vectorEffect="non-scaling-stroke" /></svg> : object.type === "pen" ? <svg className="h-full w-full overflow-visible"><polyline points={penPoints} fill="none" stroke={object.color} strokeWidth={(object.strokeWidth || 2.5) * renderZoom} strokeLinecap="round" strokeLinejoin="round" /></svg> : <div className="h-full w-full" style={{ border: object.type === "rect" ? `2px solid ${object.color}` : undefined, background: object.type === "highlight" ? object.color : undefined }} />}</div>;
       })}
       {textSelection && <div role="toolbar" aria-label="高亮颜色" onPointerDown={(event) => { if (!(event.target instanceof HTMLInputElement)) event.preventDefault(); }} className="absolute z-30 flex h-10 items-center gap-1 rounded-xl border border-[#e5e9f0] bg-white px-2 shadow-[0_8px_24px_rgba(23,34,59,.18)]" style={{ left: textSelection.left, top: textSelection.top }}><span className="mr-1 text-xs font-semibold text-[#344054]">高亮</span>{highlightColors.map((color) => <button key={color.value} type="button" aria-label={`${color.name}高亮`} onClick={() => addTextHighlights(textSelection.rects, color.value)} className="h-6 w-6 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(23,34,59,.14)] transition-transform duration-150 hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315ee7] active:scale-95" style={{ backgroundColor: color.value }} />)}<ColorPicker value="#F6C945" onChange={(color) => addTextHighlights(textSelection.rects, color)} ariaLabel="自定义高亮颜色" compact confirmLabel="应用此颜色" /></div>}
     </div>

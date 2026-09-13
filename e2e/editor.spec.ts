@@ -53,6 +53,13 @@ test("imports, edits, autosaves and restores a PDF", async ({ page }) => {
   await page.mouse.move(canvasBox!.x + 130, canvasBox!.y + 110);
   await page.mouse.up();
   await expect(page.locator('[data-editor-object-type="line"]')).toHaveCount(1);
+  await page.getByRole("button", { name: "画笔" }).click();
+  await page.mouse.move(canvasBox!.x + 90, canvasBox!.y + 250);
+  await page.mouse.down();
+  await page.mouse.move(canvasBox!.x + 130, canvasBox!.y + 220);
+  await page.mouse.move(canvasBox!.x + 175, canvasBox!.y + 265);
+  await page.mouse.up();
+  await expect(page.locator('[data-editor-object-type="pen"]')).toHaveCount(1);
   const pinchPrevented = await canvas.evaluate((element) => !element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, ctrlKey: true, deltaY: -80, clientX: 500, clientY: 400 })));
   expect(pinchPrevented).toBe(true);
   await expect(page.getByText("122%", { exact: true })).toBeVisible();
@@ -67,6 +74,7 @@ test("imports, edits, autosaves and restores a PDF", async ({ page }) => {
   await expect(page.getByText("已保存")).toBeVisible({ timeout: 5000 });
   await page.reload();
   await expect(page.getByText("双击输入文字", { exact: true })).toBeVisible();
+  await expect(page.locator('[data-editor-object-type="pen"]')).toHaveCount(1);
 });
 
 test("renders the first page before loading every thumbnail in a long PDF", async ({ page }) => {

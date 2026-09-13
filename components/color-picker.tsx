@@ -133,7 +133,7 @@ export function ColorPicker({ value, onChange, ariaLabel, compact = false, confi
   }
 
   const hasEyeDropper = typeof window !== "undefined" && "EyeDropper" in window;
-  const triggerClass = compact ? "h-6 w-6 text-sm" : "h-7 gap-1 px-2 text-xs font-medium";
+  const triggerClass = compact ? "h-6 w-6 text-sm" : "h-8 min-w-[66px] shrink-0 gap-1 whitespace-nowrap px-2 text-xs font-semibold";
 
   return <div ref={root} className="relative">
     <button ref={trigger} type="button" aria-label={ariaLabel} aria-expanded={open} onClick={() => open ? setOpen(false) : openPicker()} className={`flex items-center justify-center rounded-lg border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315ee7] ${open ? "border-[#315ee7] bg-[#eef2ff] text-[#2346bb]" : "border-[#d8deea] bg-white text-[#5f6b7c] hover:border-[#7b9af2] hover:text-[#315ee7]"} ${triggerClass}`}>{compact ? "+" : <><Palette size={13} />自定义</>}</button>

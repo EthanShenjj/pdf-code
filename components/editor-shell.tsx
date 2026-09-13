@@ -7,7 +7,7 @@ import { arrayMove } from "@dnd-kit/sortable";
 import type { DragEndEvent } from "@dnd-kit/core";
 import JSZip from "jszip";
 import {
-  ArrowLeft, ChevronDown, Download, Highlighter, Image as ImageIcon, Minus,
+  ArrowLeft, ChevronDown, Download, Highlighter, Image as ImageIcon, Minus, Pencil,
   MousePointer2, PanelLeft, PenLine, Redo2, RotateCw, Save, SlidersHorizontal, Square, Trash2, Type, Undo2,
   ZoomIn, ZoomOut,
 } from "lucide-react";
@@ -31,6 +31,7 @@ const toolGroups: { id: Tool; label: string; icon: React.ElementType; shortcut?:
     { id: "highlight", label: "高亮", icon: Highlighter, shortcut: "H", hint: "拖选 PDF 原文，再从悬浮色板选择颜色" },
     { id: "rect", label: "矩形", icon: Square, shortcut: "R", hint: "在页面上拖拽绘制矩形标记" },
     { id: "line", label: "线条", icon: Minus, shortcut: "L", hint: "在页面上拖拽绘制线条" },
+    { id: "pen", label: "画笔", icon: Pencil, shortcut: "P", hint: "按住并拖动，在页面上自由书写或绘制" },
   ],
   [{ id: "signature", label: "签名", icon: PenLine, hint: "手写并放置签名" }],
 ];
