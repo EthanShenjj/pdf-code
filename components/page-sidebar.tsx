@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -20,6 +20,23 @@ type PageItemProps = {
   onToggle: () => void;
 };
 
+function LazyThumbnail({ page, assets, eager }: { page: DraftPage; assets: LocalAsset[]; eager: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(eager);
+  useEffect(() => {
+    if (eager) { setVisible(true); return; }
+    const node = ref.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(([entry]) => { if (entry.isIntersecting) { setVisible(true); observer.disconnect(); } }, { rootMargin: "240px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [eager]);
+  const rotated = page.rotation % 180 !== 0;
+  const width = (rotated ? page.height : page.width) * 0.22;
+  const height = (rotated ? page.width : page.height) * 0.22;
+  return <div ref={ref} style={{ width, height }}>{visible ? <PageCanvas page={page} assets={assets} thumbnail /> : <div className="h-full w-full animate-pulse bg-[#edf0f5]" />}</div>;
+}
+
 function PageItem({ page, index, assets, active, splitMode, checked, onSelect, onToggle }: PageItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: page.id });
   return (
@@ -31,7 +48,7 @@ function PageItem({ page, index, assets, active, splitMode, checked, onSelect, o
       className={`relative mx-auto mb-2 w-fit rounded-xl border p-2 transition-colors ${active ? "border-[#315ee7] bg-[#eef2ff]" : "border-transparent hover:bg-[#e9edf4]"}`}
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.45 : 1 }}
     >
-      <PageCanvas page={page} assets={assets} thumbnail />
+      <LazyThumbnail page={page} assets={assets} eager={active} />
       {splitMode && (
         <button
           type="button"
@@ -78,4 +95,3 @@ export function PageSidebar({ pages, assets, activeId, splitMode, selectedIds, o
     </aside>
   );
 }
-

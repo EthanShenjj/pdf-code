@@ -25,6 +25,17 @@ test("imports, edits, autosaves and restores a PDF", async ({ page }) => {
   await expect(page.getByText("双击输入文字", { exact: true })).toBeVisible();
 });
 
+test("renders the first page before loading every thumbnail in a long PDF", async ({ page }) => {
+  await page.goto("/");
+  const card = page.getByRole("heading", { name: "编辑 PDF" }).locator("..");
+  await card.locator('input[type="file"]').setInputFiles(path.resolve("fixtures/sample-30-pages.pdf"));
+  await expect(page).toHaveURL(/\/editor\//);
+  await expect(page.getByText("第 1 页，共 30 页")).toBeVisible();
+  const mainCanvas = page.getByLabel("PDF 文档区域，可使用触控板双指缩放").locator("canvas").first();
+  await expect.poll(() => mainCanvas.evaluate((element) => (element as HTMLCanvasElement).width), { timeout: 5000 }).toBeGreaterThan(300);
+  expect(await page.locator("aside").first().locator("canvas").count()).toBeLessThan(30);
+});
+
 test("merges several PDFs and accepts another file", async ({ page }) => {
   await page.goto("/");
   const card = page.getByRole("heading", { name: "合并 PDF" }).locator("..");

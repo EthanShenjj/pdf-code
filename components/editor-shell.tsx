@@ -27,17 +27,18 @@ const tools: { id: Tool; label: string; icon: React.ElementType }[] = [
   { id: "signature", label: "签名", icon: PenLine },
 ];
 
-function LazyPage({ page, assets, onVisible }: { page: DraftPage; assets: LocalAsset[]; onVisible: (id: string) => void }) {
+function LazyPage({ page, assets, onVisible, priority = false }: { page: DraftPage; assets: LocalAsset[]; onVisible: (id: string) => void; priority?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible] = useState(priority);
   const zoom = useEditor((state) => state.zoom);
   useEffect(() => {
+    if (priority) { setVisible(true); return; }
     const node = ref.current;
     if (!node) return;
     const observer = new IntersectionObserver(([entry]) => { if (entry.isIntersecting) setVisible(true); }, { rootMargin: "500px" });
     observer.observe(node);
     return () => observer.disconnect();
-  }, []);
+  }, [priority]);
   const rotated = page.rotation % 180 !== 0;
   return (
     <div ref={ref} id={`page-${page.id}`} onMouseEnter={() => onVisible(page.id)} style={!visible ? { width: (rotated ? page.height : page.width) * zoom, height: (rotated ? page.width : page.height) * zoom } : undefined}>
@@ -294,7 +295,7 @@ export function EditorShell({ id, initialMode = "edit" }: { id: string; initialM
       </div>
       <div className="flex min-h-0 flex-1">
         <PageSidebar pages={draft.pages} assets={doc.assets} activeId={page.id} splitMode={initialMode === "split"} selectedIds={splitSelection} onToggle={toggleSplit} onReorder={reorder} onAddFiles={(files) => void mergeFiles(files)} onSelect={(pageId) => { setCurrentPage(pageId); document.getElementById(`page-${pageId}`)?.scrollIntoView({ behavior: "smooth" }); }} />
-        <section ref={documentViewport} aria-label="PDF 文档区域，可使用触控板双指缩放" className="min-w-0 flex-1 overflow-auto px-8 py-10 [overscroll-behavior:contain]"><div className="mx-auto flex w-fit flex-col gap-10">{draft.pages.map((item) => <LazyPage key={item.id} page={item} assets={doc.assets} onVisible={setCurrentPage} />)}</div></section>
+        <section ref={documentViewport} aria-label="PDF 文档区域，可使用触控板双指缩放" className="min-w-0 flex-1 overflow-auto px-8 py-10 [overscroll-behavior:contain]"><div className="mx-auto flex w-fit flex-col gap-10">{draft.pages.map((item, index) => <LazyPage key={item.id} page={item} assets={doc.assets} onVisible={setCurrentPage} priority={index === 0} />)}</div></section>
         <aside className="w-64 shrink-0 overflow-y-auto border-l border-[#dfe3ea] bg-white p-5">
           <h2 className="font-semibold">{selected ? "对象属性" : "页面"}</h2>
           {selected ? <div className="mt-6 space-y-5"><label className="block text-xs text-[#667085]">颜色<input type="color" value={selected.color} onChange={(event) => updateObject(selected.id, { color: event.target.value })} className="mt-2 h-10 w-full" /></label>{selected.type === "text" && <><label className="block text-xs text-[#667085]">文字<input value={selected.text} onChange={(event) => updateObject(selected.id, { text: event.target.value })} className="mt-2 h-10 w-full rounded-lg border border-[#d8deea] px-3 text-sm" /></label><label className="block text-xs text-[#667085]">字号<input type="number" min="6" max="200" value={selected.fontSize} onChange={(event) => updateObject(selected.id, { fontSize: Number(event.target.value) })} className="mt-2 h-10 w-full rounded-lg border border-[#d8deea] px-3 text-sm" /></label></>}{(selected.type === "image" || selected.type === "signature") && <label className="block text-xs text-[#667085]">宽度<input type="number" min="20" value={Math.round(selected.width)} onChange={(event) => { const width = Number(event.target.value); updateObject(selected.id, { width, height: selected.height * width / selected.width }); }} className="mt-2 h-10 w-full rounded-lg border border-[#d8deea] px-3 text-sm" /></label>}<label className="block text-xs text-[#667085]">透明度<input type="range" min="0.1" max="1" step="0.05" value={selected.opacity} onChange={(event) => updateObject(selected.id, { opacity: Number(event.target.value) })} className="mt-2 w-full" /></label><button onClick={() => { commit((value) => ({ ...value, objects: value.objects.filter((object) => object.id !== selected.id) })); select(null); }} className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 py-2 text-sm text-red-600 hover:bg-red-50"><Trash2 size={16} />删除对象</button></div> : <div className="mt-6 space-y-3"><p className="text-sm text-[#667085]">第 {draft.pages.findIndex((item) => item.id === page.id) + 1} 页，共 {draft.pages.length} 页</p><button onClick={() => commit((value) => ({ ...value, pages: value.pages.map((item) => item.id === page.id ? { ...item, rotation: ((item.rotation + 90) % 360) as DraftPage["rotation"] } : item) }))} className="flex w-full items-center gap-2 rounded-lg border border-[#d8deea] px-3 py-2 text-sm hover:bg-[#f2f4f7]"><RotateCw size={16} />顺时针旋转</button><button disabled={draft.pages.length === 1} onClick={() => { commit((value) => ({ ...value, pages: value.pages.filter((item) => item.id !== page.id), objects: value.objects.filter((object) => object.pageId !== page.id) })); setSplitSelection((value) => { const next = new Set(value); next.delete(page.id); return next; }); setCurrentPage(draft.pages.find((item) => item.id !== page.id)?.id ?? ""); }} className="flex w-full items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm text-red-600 hover:bg-red-50"><Trash2 size={16} />删除这一页</button><p className="pt-3 text-xs leading-5 text-[#8a93a5]">拖动左侧缩略图调整页序。拆分模式可直接勾选需要的页面。</p></div>}
