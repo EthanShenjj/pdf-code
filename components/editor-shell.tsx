@@ -27,7 +27,7 @@ const toolGroups: { id: Tool; label: string; icon: React.ElementType; shortcut?:
     { id: "image", label: "图片", icon: ImageIcon, hint: "插入 JPG 或 PNG 图片" },
   ],
   [
-    { id: "highlight", label: "高亮", icon: Highlighter, shortcut: "H", hint: "拖选原文直接高亮；点击空白添加色块" },
+    { id: "highlight", label: "高亮", icon: Highlighter, shortcut: "H", hint: "拖选 PDF 原文，再从悬浮色板选择颜色" },
     { id: "rect", label: "矩形", icon: Square, shortcut: "R", hint: "点击页面添加矩形标记" },
     { id: "line", label: "线条", icon: Minus, shortcut: "L", hint: "点击页面添加线条" },
   ],

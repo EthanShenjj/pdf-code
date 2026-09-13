@@ -10,6 +10,12 @@ import { useEditor } from "@/lib/editor-store";
 type Props = { page: DraftPage; assets: LocalAsset[]; thumbnail?: boolean };
 type PdfRect = { x: number; y: number; width: number; height: number };
 type TextSelection = { left: number; top: number; rects: PdfRect[] };
+const highlightColors = [
+  { name: "黄色", value: "#f6c945" },
+  { name: "绿色", value: "#75c88a" },
+  { name: "粉色", value: "#f28aa9" },
+  { name: "蓝色", value: "#7aa7ff" },
+] as const;
 
 export function PageCanvas({ page, assets, thumbnail = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -107,23 +113,22 @@ export function PageCanvas({ page, assets, thumbnail = false }: Props) {
   }
 
   function addAt(event: React.MouseEvent) {
-    if (thumbnail || tool === "select" || tool === "image" || tool === "signature" || !viewport) return;
+    if (thumbnail || tool === "select" || tool === "highlight" || tool === "image" || tool === "signature" || !viewport) return;
     if (event.target instanceof Element && event.target.closest(".pdf-text-layer")) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const [x, y] = viewport.convertToPdfPoint(event.clientX - rect.left, event.clientY - rect.top);
-    const object: EditorObject = { id: crypto.randomUUID(), pageId: page.id, type: tool, x, y: tool === "line" ? y : y - 35, width: tool === "text" ? 150 : 120, height: tool === "text" ? 28 : tool === "line" ? 1 : 60, color: tool === "highlight" ? "#f6c945" : "#315ee7", opacity: tool === "highlight" ? 0.38 : 1, text: tool === "text" ? "双击输入文字" : undefined, fontSize: tool === "text" ? 18 : undefined };
+    const object: EditorObject = { id: crypto.randomUUID(), pageId: page.id, type: tool, x, y: tool === "line" ? y : y - 35, width: tool === "text" ? 150 : 120, height: tool === "text" ? 28 : tool === "line" ? 1 : 60, color: "#315ee7", opacity: 1, text: tool === "text" ? "双击输入文字" : undefined, fontSize: tool === "text" ? 18 : undefined };
     commit((value) => ({ ...value, objects: [...value.objects, object] }));
     select(object.id);
   }
 
-  function addTextHighlights(rects: PdfRect[]) {
+  function addTextHighlights(rects: PdfRect[], color: string) {
     if (!rects.length) return;
-    const highlights: EditorObject[] = rects.map((rect) => ({ id: crypto.randomUUID(), pageId: page.id, type: "highlight", ...rect, color: "#f6c945", opacity: 0.38 }));
+    const highlights: EditorObject[] = rects.map((rect) => ({ id: crypto.randomUUID(), pageId: page.id, type: "highlight", ...rect, color, opacity: 0.38 }));
     commit((value) => ({ ...value, objects: [...value.objects, ...highlights] }));
     select(highlights.at(-1)!.id);
     setTextSelection(null);
     window.getSelection()?.removeAllRanges();
-    useEditor.getState().setTool("select");
   }
 
   function finishTextSelection() {
@@ -156,12 +161,9 @@ export function PageCanvas({ page, assets, thumbnail = false }: Props) {
     });
     if (!rects.length) return;
 
-    if (tool === "highlight") addTextHighlights(rects);
-    else {
-      const first = merged[0];
-      const last = merged.at(-1)!;
-      setTextSelection({ left: Math.max(8, Math.min((first.left + last.right) / 2 - pageBox.left - 52, pageBox.width - 112)), top: Math.max(8, first.top - pageBox.top - 46), rects });
-    }
+    const first = merged[0];
+    const last = merged.at(-1)!;
+    setTextSelection({ left: Math.max(8, Math.min((first.left + last.right) / 2 - pageBox.left - 99, pageBox.width - 206)), top: Math.max(8, first.top - pageBox.top - 50), rects });
   }
 
   function startDrag(event: React.PointerEvent, object: EditorObject) {
@@ -199,7 +201,7 @@ export function PageCanvas({ page, assets, thumbnail = false }: Props) {
         const selected = object.id === selectedId;
         return <div key={object.id} data-editor-object-type={object.type} onPointerDown={(event) => startDrag(event, object)} onDoubleClick={() => { if (object.type === "text") { const text = prompt("输入文字", object.text); if (text !== null) updateObject(object.id, { text }); } }} className={`absolute z-20 touch-none ${selected ? "ring-2 ring-[#315ee7] ring-offset-2" : ""}`} style={{ left: box.left, top: box.top, width: Math.max(box.width, 8), height: Math.max(box.height, 4), opacity: object.opacity, color: object.color, cursor: "move" }}>{object.type === "text" ? <span style={{ fontSize: (object.fontSize || 18) * zoom, whiteSpace: "nowrap" }}>{object.text}</span> : object.type === "image" || object.type === "signature" ? <img draggable={false} src={object.dataUrl} alt="新增图片" className="h-full w-full object-contain" /> : object.type === "line" ? <svg className="h-full w-full overflow-visible"><line x1="0" y1="0" x2="100%" y2="100%" stroke={object.color} strokeWidth="2" /></svg> : <div className="h-full w-full" style={{ border: object.type === "rect" ? `2px solid ${object.color}` : undefined, background: object.type === "highlight" ? object.color : undefined }} />}</div>;
       })}
-      {textSelection && <div className="absolute z-30" style={{ left: textSelection.left, top: textSelection.top }}><button type="button" onPointerDown={(event) => event.preventDefault()} onClick={() => addTextHighlights(textSelection.rects)} className="flex h-9 items-center gap-2 rounded-xl bg-[#17223b] px-3 text-xs font-semibold text-white shadow-xl transition-transform duration-150 hover:-translate-y-0.5 active:scale-95"><span className="h-3 w-3 rounded-sm bg-[#f6c945]" />高亮所选文字</button></div>}
+      {textSelection && <div role="toolbar" aria-label="高亮颜色" onPointerDown={(event) => event.preventDefault()} className="absolute z-30 flex h-10 items-center gap-1 rounded-xl border border-[#e5e9f0] bg-white px-2 shadow-[0_8px_24px_rgba(23,34,59,.18)]" style={{ left: textSelection.left, top: textSelection.top }}><span className="mr-1 text-xs font-semibold text-[#344054]">高亮</span>{highlightColors.map((color) => <button key={color.value} type="button" aria-label={`${color.name}高亮`} onClick={() => addTextHighlights(textSelection.rects, color.value)} className="h-6 w-6 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(23,34,59,.14)] transition-transform duration-150 hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315ee7] active:scale-95" style={{ backgroundColor: color.value }} />)}</div>}
     </div>
   );
 }
