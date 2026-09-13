@@ -9,6 +9,25 @@ test("imports, edits, autosaves and restores a PDF", async ({ page }) => {
   await expect(page.getByText("第 1 页，共 1 页")).toBeVisible();
   const canvas = page.locator("section canvas").first();
   await expect.poll(() => canvas.evaluate((element) => (element as HTMLCanvasElement).width)).toBeGreaterThan(300);
+  const sourceText = page.locator(".pdf-text-layer span").filter({ hasText: "Paperkit browser test" }).first();
+  await expect(sourceText).toHaveText("Paperkit browser test");
+  const selectSourceText = () => sourceText.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  });
+  await selectSourceText();
+  await page.getByRole("button", { name: "高亮所选文字" }).click();
+  await expect(page.locator('[data-editor-object-type="highlight"]')).toHaveCount(1);
+  await page.getByRole("button", { name: "撤销" }).click();
+  await expect(page.locator('[data-editor-object-type="highlight"]')).toHaveCount(0);
+  await page.getByRole("button", { name: "高亮" }).click();
+  await selectSourceText();
+  await expect(page.locator('[data-editor-object-type="highlight"]')).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "选择" })).toHaveAttribute("aria-pressed", "true");
   const pinchPrevented = await canvas.evaluate((element) => !element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, ctrlKey: true, deltaY: -80, clientX: 500, clientY: 400 })));
   expect(pinchPrevented).toBe(true);
   await expect(page.getByText("122%", { exact: true })).toBeVisible();

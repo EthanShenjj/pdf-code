@@ -20,12 +20,20 @@ import type { DraftPage, EditorObject, Tool } from "@/lib/editor-types";
 import { downloadBytes, exportPdf, fileDataUrl, pdfPages } from "@/lib/pdf-engine";
 import { getDocument, putDocument, type LocalAsset, type LocalDocument } from "@/lib/local-db";
 
-const tools: { id: Tool; label: string; icon: React.ElementType }[] = [
-  { id: "select", label: "选择", icon: MousePointer2 }, { id: "text", label: "文字", icon: Type },
-  { id: "image", label: "图片", icon: ImageIcon }, { id: "rect", label: "矩形", icon: Square },
-  { id: "highlight", label: "高亮", icon: Highlighter }, { id: "line", label: "线条", icon: Minus },
-  { id: "signature", label: "签名", icon: PenLine },
+const toolGroups: { id: Tool; label: string; icon: React.ElementType; shortcut?: string; hint: string }[][] = [
+  [
+    { id: "select", label: "选择", icon: MousePointer2, shortcut: "V", hint: "拖选原文可复制，选中后可一键高亮" },
+    { id: "text", label: "文字", icon: Type, shortcut: "T", hint: "点击页面添加文字" },
+    { id: "image", label: "图片", icon: ImageIcon, hint: "插入 JPG 或 PNG 图片" },
+  ],
+  [
+    { id: "highlight", label: "高亮", icon: Highlighter, shortcut: "H", hint: "拖选原文直接高亮；点击空白添加色块" },
+    { id: "rect", label: "矩形", icon: Square, shortcut: "R", hint: "点击页面添加矩形标记" },
+    { id: "line", label: "线条", icon: Minus, shortcut: "L", hint: "点击页面添加线条" },
+  ],
+  [{ id: "signature", label: "签名", icon: PenLine, hint: "手写并放置签名" }],
 ];
+const tools = toolGroups.flat();
 
 function LazyPage({ page, assets, onVisible, priority = false }: { page: DraftPage; assets: LocalAsset[]; onVisible: (id: string) => void; priority?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -176,16 +184,25 @@ export function EditorShell({ id, initialMode = "edit" }: { id: string; initialM
   useEffect(() => { if (!doc || status === "loading" || draft === doc.draft) return; setStatus("dirty"); const timer = setTimeout(() => void save(), 2000); return () => clearTimeout(timer); }, [draft]);
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      const editing = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") { event.preventDefault(); event.shiftKey ? redo() : undo(); }
-      else if ((event.key === "Delete" || event.key === "Backspace") && selectedId && (event.target as HTMLElement).tagName !== "INPUT") { commit((value) => ({ ...value, objects: value.objects.filter((object) => object.id !== selectedId) })); select(null); }
+      else if (!editing && (event.metaKey || event.ctrlKey) && ["+", "="].includes(event.key)) { event.preventDefault(); setZoom(zoom + 0.1); }
+      else if (!editing && (event.metaKey || event.ctrlKey) && event.key === "-") { event.preventDefault(); setZoom(zoom - 0.1); }
+      else if (!editing && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        const shortcut = tools.find((item) => item.shortcut?.toLowerCase() === event.key.toLowerCase());
+        if (shortcut) { event.preventDefault(); setTool(shortcut.id); }
+        else if ((event.key === "Delete" || event.key === "Backspace") && selectedId) { commit((value) => ({ ...value, objects: value.objects.filter((object) => object.id !== selectedId) })); select(null); }
+      }
     };
     const before = (event: BeforeUnloadEvent) => { if (status === "dirty" || status === "saving") event.preventDefault(); };
     window.addEventListener("keydown", key); window.addEventListener("beforeunload", before);
     return () => { window.removeEventListener("keydown", key); window.removeEventListener("beforeunload", before); };
-  }, [commit, redo, select, selectedId, status, undo]);
+  }, [commit, redo, select, selectedId, setTool, setZoom, status, undo, zoom]);
 
   const selected = useMemo(() => draft.objects.find((object) => object.id === selectedId), [draft.objects, selectedId]);
   const page = draft.pages.find((item) => item.id === currentPage) ?? draft.pages[0];
+  const activeTool = tools.find((item) => item.id === tool)!;
 
   async function save() {
     if (!doc) return;
@@ -287,11 +304,12 @@ export function EditorShell({ id, initialMode = "edit" }: { id: string; initialM
         <button disabled={exporting} onClick={() => void exportImages()} className="h-10 rounded-lg border border-[#d8deea] px-3 text-sm">导出图片</button>
       </header>
       <PdfTaskBar mode={initialMode} pageCount={draft.pages.length} assetCount={doc.assets.length} selectedCount={splitSelection.size} exporting={exporting} onSelectAll={() => selectPattern("all")} onSelectOdd={() => selectPattern("odd")} onSelectEven={() => selectPattern("even")} onClear={() => selectPattern("none")} onExportCombined={() => void createPdf(draft.pages.filter((item) => splitSelection.has(item.id)).map((item) => item.id), `${doc.name}-所选页面.pdf`)} onExportSeparate={() => void exportSeparatePages()} />
-      <div className="flex h-14 shrink-0 items-center gap-1 border-b border-[#dfe3ea] bg-white px-4">
-        <div className="flex gap-1">{tools.map((item) => <button key={item.id} onClick={() => { if (item.id === "image") imageInput.current?.click(); else if (item.id === "signature") setSignature(true); else setTool(item.id); }} className={`flex h-10 items-center gap-2 rounded-lg px-3 text-sm ${tool === item.id ? "bg-[#eef2ff] font-medium text-[#315ee7]" : "hover:bg-[#f2f4f7]"}`}><item.icon size={17} />{item.label}</button>)}</div>
+      <div className="flex h-14 shrink-0 items-center gap-2 border-b border-[#dfe3ea] bg-white px-4 shadow-[0_1px_0_rgba(23,34,59,.02)]">
+        <div className="flex items-center gap-1">{toolGroups.map((group, groupIndex) => <div key={group[0].id} className="flex items-center gap-1">{groupIndex > 0 && <span className="mx-1 h-6 w-px bg-[#e5e9f0]" />}{group.map((item) => <button key={item.id} type="button" aria-pressed={tool === item.id} title={`${item.label}${item.shortcut ? `（${item.shortcut}）` : ""}`} onClick={() => { if (item.id === "image") imageInput.current?.click(); else if (item.id === "signature") setSignature(true); else setTool(item.id); }} className={`flex h-9 items-center gap-2 rounded-xl px-3 text-sm transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-95 ${tool === item.id ? "bg-[#315ee7] font-semibold text-white shadow-sm" : "text-[#344054] hover:bg-[#f2f4f7] hover:text-[#17223b]"}`}><item.icon size={16} strokeWidth={tool === item.id ? 2.4 : 2} />{item.label}</button>)}</div>)}</div>
         <input ref={imageInput} hidden type="file" accept="image/png,image/jpeg" onChange={async (event) => { const file = event.target.files?.[0]; if (file) addMedia(await fileDataUrl(file), "image"); }} />
-        <span className="mx-2 h-6 w-px bg-[#dfe3ea]" /><button disabled={!history.length} onClick={undo} className="rounded-lg p-2 hover:bg-[#f2f4f7]" title="撤销"><Undo2 size={18} /></button><button disabled={!future.length} onClick={redo} className="rounded-lg p-2 hover:bg-[#f2f4f7]" title="重做"><Redo2 size={18} /></button>
-        <div className="ml-auto flex items-center gap-1"><button aria-label="缩小 PDF" onClick={() => setZoom(zoom - 0.1)} className="rounded-lg p-2 hover:bg-[#f2f4f7]"><ZoomOut size={18} /></button><span className="w-14 text-center text-xs" title="可在文档区域使用触控板双指缩放">{Math.round(zoom * 100)}%</span><button aria-label="放大 PDF" onClick={() => setZoom(zoom + 0.1)} className="rounded-lg p-2 hover:bg-[#f2f4f7]"><ZoomIn size={18} /></button></div>
+        <span className="hidden max-w-72 truncate rounded-lg bg-[#f8f9fb] px-2.5 py-1.5 text-xs text-[#667085] 2xl:block"><strong className="font-semibold text-[#344054]">{activeTool.label}</strong> · {activeTool.hint}</span>
+        <span className="mx-1 h-6 w-px bg-[#dfe3ea]" /><button aria-label="撤销" disabled={!history.length} onClick={undo} className="rounded-lg p-2 transition-colors hover:bg-[#f2f4f7]" title="撤销（⌘Z）"><Undo2 size={18} /></button><button aria-label="重做" disabled={!future.length} onClick={redo} className="rounded-lg p-2 transition-colors hover:bg-[#f2f4f7]" title="重做（⇧⌘Z）"><Redo2 size={18} /></button>
+        <div className="ml-auto flex items-center gap-1 rounded-xl border border-[#e5e9f0] bg-[#f8f9fb] p-0.5"><button aria-label="缩小 PDF" onClick={() => setZoom(zoom - 0.1)} className="rounded-lg p-1.5 transition-colors hover:bg-white hover:shadow-sm"><ZoomOut size={17} /></button><span className="w-14 text-center text-xs font-medium tabular-nums" title="可在文档区域使用触控板双指缩放">{Math.round(zoom * 100)}%</span><button aria-label="放大 PDF" onClick={() => setZoom(zoom + 0.1)} className="rounded-lg p-1.5 transition-colors hover:bg-white hover:shadow-sm"><ZoomIn size={17} /></button></div>
       </div>
       <div className="flex min-h-0 flex-1">
         <PageSidebar pages={draft.pages} assets={doc.assets} activeId={page.id} splitMode={initialMode === "split"} selectedIds={splitSelection} onToggle={toggleSplit} onReorder={reorder} onAddFiles={(files) => void mergeFiles(files)} onSelect={(pageId) => { setCurrentPage(pageId); document.getElementById(`page-${pageId}`)?.scrollIntoView({ behavior: "smooth" }); }} />
