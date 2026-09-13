@@ -23,7 +23,7 @@ test("imports, edits, autosaves and restores a PDF", async ({ page }) => {
   await expect(page.getByRole("toolbar", { name: "高亮颜色" })).toBeVisible();
   await page.getByRole("button", { name: "自定义高亮颜色" }).click();
   const customHighlight = page.getByRole("dialog", { name: "自定义高亮颜色面板" });
-  await customHighlight.getByLabel("自定义高亮 Hex 色值").fill("#8B5CF6");
+  await customHighlight.getByLabel("Hex 色值").fill("#8B5CF6");
   await customHighlight.getByRole("button", { name: "应用此颜色" }).click();
   await expect(page.locator('[data-editor-object-type="highlight"]')).toHaveCount(1);
   await page.getByRole("button", { name: "撤销" }).click();
