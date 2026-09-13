@@ -1,0 +1,3 @@
+import { describe,expect,it } from "vitest";import type { DraftPage } from "./editor-types";import { movePage,nextVersion,rotatePage } from "./editor-utils";
+describe("page operations",()=>{it("rotates four times",()=>{let page:DraftPage={id:"p",sourceAssetId:"a",sourcePageIndex:0,rotation:0,width:100,height:200};for(let i=0;i<4;i++)page=rotatePage(page);expect(page.rotation).toBe(0)});it("moves without losing pages",()=>expect(movePage(["a","b","c"],2,0)).toEqual(["c","a","b"]));});
+describe("draft version",()=>{it("increments matching version",()=>expect(nextVersion(4,4)).toBe(5));it("rejects stale version",()=>expect(nextVersion(5,4)).toBeNull())});

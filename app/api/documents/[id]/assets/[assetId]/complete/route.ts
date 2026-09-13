@@ -1,0 +1,4 @@
+import { HeadObjectCommand } from "@aws-sdk/client-s3";import { NextResponse } from "next/server";import { prisma } from "@/lib/prisma";import { requireUser } from "@/lib/session";import { bucket,s3 } from "@/lib/s3";
+export async function POST(_:Request,{params}:{params:Promise<{id:string,assetId:string}>}){const user=await requireUser();if(!user)return NextResponse.json({error:"未登录"},{status:401});const {id,assetId}=await params;const asset=await prisma.asset.findFirst({where:{id:assetId,documentId:id,document:{ownerId:user.id}}});if(!asset)return NextResponse.json({error:"文件不存在"},{status:404});const head=await s3.send(new HeadObjectCommand({Bucket:bucket,Key:asset.storageKey})).catch(()=>null);if(!head||head.ContentLength!==asset.size||head.ContentType!==asset.mimeType)return NextResponse.json({error:"上传校验失败"},{status:400});await prisma.asset.update({where:{id:asset.id},data:{status:"READY"}});return NextResponse.json({ok:true});}
+export const runtime="nodejs";
+
