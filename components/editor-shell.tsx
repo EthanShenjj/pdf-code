@@ -8,7 +8,7 @@ import type { DragEndEvent } from "@dnd-kit/core";
 import JSZip from "jszip";
 import {
   ArrowLeft, ChevronDown, Download, Highlighter, Image as ImageIcon, Minus,
-  MousePointer2, PenLine, Redo2, RotateCw, Save, Square, Trash2, Type, Undo2,
+  MousePointer2, PanelLeft, PenLine, Redo2, RotateCw, Save, SlidersHorizontal, Square, Trash2, Type, Undo2,
   ZoomIn, ZoomOut,
 } from "lucide-react";
 import { Brand } from "./brand";
@@ -29,8 +29,8 @@ const toolGroups: { id: Tool; label: string; icon: React.ElementType; shortcut?:
   ],
   [
     { id: "highlight", label: "高亮", icon: Highlighter, shortcut: "H", hint: "拖选 PDF 原文，再从悬浮色板选择颜色" },
-    { id: "rect", label: "矩形", icon: Square, shortcut: "R", hint: "点击页面添加矩形标记" },
-    { id: "line", label: "线条", icon: Minus, shortcut: "L", hint: "点击页面添加线条" },
+    { id: "rect", label: "矩形", icon: Square, shortcut: "R", hint: "在页面上拖拽绘制矩形标记" },
+    { id: "line", label: "线条", icon: Minus, shortcut: "L", hint: "在页面上拖拽绘制线条" },
   ],
   [{ id: "signature", label: "签名", icon: PenLine, hint: "手写并放置签名" }],
 ];
@@ -82,6 +82,27 @@ function SignatureDialog({ onClose, onDone }: { onClose: () => void; onDone: (da
   );
 }
 
+function ExportPagesDialog({ pageCount, format, initialPage, exporting, onClose, onExport }: { pageCount: number; format: "pdf" | "image"; initialPage: number; exporting: boolean; onClose: () => void; onExport: (pages: number[]) => void }) {
+  const [selected, setSelected] = useState<Set<number>>(() => new Set([initialPage]));
+  const [error, setError] = useState("");
+  function submit() {
+    const pages = [...selected].sort((first, second) => first - second);
+    if (!pages.length) { setError("请至少选择一页"); return; }
+    onExport(pages);
+  }
+  const formatName = format === "pdf" ? "PDF" : "图片";
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-[#17223b]/50 p-4" role="dialog" aria-modal="true" aria-labelledby="export-pages-title">
+    <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl sm:p-6">
+      <h2 id="export-pages-title" className="text-xl font-semibold">选择要导出的页面</h2>
+      <p className="mt-1 text-sm text-[#667085]">选择 1 页或多页，页面顺序会与文档保持一致。</p>
+      <div className="mt-5 flex items-center justify-between"><span className="text-xs font-medium text-[#667085]">已选 {selected.size} / {pageCount} 页</span><div className="flex gap-1"><button type="button" onClick={() => setSelected(new Set(Array.from({ length: pageCount }, (_, index) => index + 1)))} className="rounded-md px-2 py-1 text-xs font-medium text-[#315ee7] hover:bg-[#eef2ff]">全选</button><button type="button" onClick={() => setSelected(new Set())} className="rounded-md px-2 py-1 text-xs font-medium text-[#667085] hover:bg-[#f2f4f7]">清空</button></div></div>
+      <div className="mt-2 grid max-h-56 grid-cols-5 gap-2 overflow-y-auto rounded-xl border border-[#e3e8f2] bg-[#fafbfc] p-3" aria-label="可导出的页面">{Array.from({ length: pageCount }, (_, index) => { const number = index + 1, active = selected.has(number); return <button key={number} type="button" aria-pressed={active} aria-label={`第 ${number} 页`} onClick={() => setSelected((current) => { const next = new Set(current); next.has(number) ? next.delete(number) : next.add(number); return next; })} className={`h-9 rounded-lg text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315ee7] ${active ? "bg-[#315ee7] text-white shadow-sm" : "border border-[#dfe3ea] bg-white text-[#526074] hover:border-[#7b9af2] hover:text-[#315ee7]"}`}>{number}</button>; })}</div>
+      {error && <p role="alert" className="mt-3 text-sm text-red-600">{error}</p>}
+      <div className="mt-6 flex justify-end gap-2"><button type="button" disabled={exporting} onClick={onClose} className="rounded-lg px-4 py-2 text-sm hover:bg-[#f2f4f7]">取消</button><button type="button" disabled={exporting} onClick={submit} className="rounded-lg bg-[#315ee7] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2346bb]">{exporting ? "正在导出…" : `导出 ${selected.size} 页${formatName}`}</button></div>
+    </div>
+  </div>;
+}
+
 export function EditorShell({ id, initialMode = "edit" }: { id: string; initialMode?: "edit" | "merge" | "split" }) {
   const router = useRouter();
   const imageInput = useRef<HTMLInputElement>(null);
@@ -92,11 +113,17 @@ export function EditorShell({ id, initialMode = "edit" }: { id: string; initialM
   const [currentPage, setCurrentPage] = useState("");
   const [splitSelection, setSplitSelection] = useState<Set<string>>(new Set());
   const [signature, setSignature] = useState(false);
+  const [exportPagesFormat, setExportPagesFormat] = useState<"pdf" | "image" | null>(null);
+  const [mobilePanel, setMobilePanel] = useState<"pages" | "properties" | null>(null);
   const [exporting, setExporting] = useState(false);
   const [notice, setNotice] = useState("");
   const { draft, setDraft, tool, setTool, zoom, setZoom, selectedId, select, commit, updateObject, undo, redo, history, future } = useEditor();
 
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 639px)").matches) setZoom(0.55);
+  }, [setZoom]);
 
   useEffect(() => {
     const viewport = documentViewport.current;
@@ -248,7 +275,8 @@ export function EditorShell({ id, initialMode = "edit" }: { id: string; initialM
       const nextDoc = { ...doc, assets: [...doc.assets, ...added] }; setDoc(nextDoc);
       commit((value) => ({ ...value, pages: [...value.pages, ...pages] }));
       if (initialMode === "split") setSplitSelection((current) => new Set([...current, ...pages.map((item) => item.id)]));
-      setNotice(`已加入 ${raw.length} 个 PDF、${pages.length} 页`);
+      setCurrentPage(pages[0]?.id ?? currentPage);
+      setNotice(`已加入 ${raw.length} 个 PDF、${pages.length} 页；当前共 ${nextDoc.assets.length} 个 PDF、${draft.pages.length + pages.length} 页`);
     } catch (error) { setNotice(error instanceof Error ? error.message : "合并失败"); }
   }
 
@@ -266,6 +294,15 @@ export function EditorShell({ id, initialMode = "edit" }: { id: string; initialM
     finally { setExporting(false); }
   }
 
+  function exportSelectedPages(pages: number[]) {
+    const pageIds = pages.map((number) => draft.pages[number - 1]?.id).filter((id): id is string => Boolean(id));
+    const suffix = pages.join("-");
+    const format = exportPagesFormat;
+    setExportPagesFormat(null);
+    if (format === "image") void exportImages(pageIds, `${doc?.name || "文档"}-${suffix}页`);
+    else void createPdf(pageIds, `${doc?.name || "文档"}-${suffix}页.pdf`);
+  }
+
   async function exportSeparatePages() {
     if (!doc || !splitSelection.size) return;
     setExporting(true); setNotice("");
@@ -278,15 +315,18 @@ export function EditorShell({ id, initialMode = "edit" }: { id: string; initialM
     finally { setExporting(false); }
   }
 
-  async function exportImages() {
+  async function exportImages(pageIds?: string[], fileBaseName = `${doc?.name || "文档"}-图片`) {
     if (!doc) return;
-    setExporting(true);
+    setExporting(true); setNotice("");
     try {
-      const bytes = await exportPdf(doc.assets, draft); const pdfjs = await import("pdfjs-dist"); pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+      const bytes = await exportPdf(doc.assets, draft, pageIds); const pdfjs = await import("pdfjs-dist"); pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
       const rendered = await pdfjs.getDocument({ data: bytes }).promise, zip = new JSZip();
-      for (let index = 1; index <= rendered.numPages; index++) { const source = await rendered.getPage(index), viewport = source.getViewport({ scale: 150 / 72 }), canvas = document.createElement("canvas"); canvas.width = Math.round(viewport.width); canvas.height = Math.round(viewport.height); await source.render({ canvas, canvasContext: canvas.getContext("2d")!, viewport }).promise; const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("图片生成失败")), "image/png")); zip.file(`page-${String(index).padStart(3, "0")}.png`, blob); }
-      downloadBytes(await zip.generateAsync({ type: "uint8array" }), `${doc.name}-图片.zip`, "application/zip"); setNotice("图片 ZIP 已生成并开始下载");
-    } finally { setExporting(false); }
+      const images: Blob[] = [];
+      for (let index = 1; index <= rendered.numPages; index++) { const source = await rendered.getPage(index), viewport = source.getViewport({ scale: 150 / 72 }), canvas = document.createElement("canvas"); canvas.width = Math.round(viewport.width); canvas.height = Math.round(viewport.height); await source.render({ canvas, canvasContext: canvas.getContext("2d")!, viewport }).promise; const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("图片生成失败")), "image/png")); images.push(blob); zip.file(`page-${String(index).padStart(3, "0")}.png`, blob); }
+      if (images.length === 1) { downloadBytes(new Uint8Array(await images[0].arrayBuffer()), `${fileBaseName}.png`, "image/png"); setNotice("图片已生成并开始下载"); }
+      else { downloadBytes(await zip.generateAsync({ type: "uint8array" }), `${fileBaseName}.zip`, "application/zip"); setNotice(`已生成 ${images.length} 张图片并开始下载`); }
+    } catch (error) { setNotice(error instanceof Error ? `导出失败：${error.message}` : "导出失败"); }
+    finally { setExporting(false); }
   }
 
   function reorder(event: DragEndEvent) { if (event.over && event.active.id !== event.over.id) commit((value) => { const from = value.pages.findIndex((item) => item.id === event.active.id), to = value.pages.findIndex((item) => item.id === event.over!.id); return { ...value, pages: arrayMove(value.pages, from, to) }; }); }
@@ -295,31 +335,33 @@ export function EditorShell({ id, initialMode = "edit" }: { id: string; initialM
 
   if (!doc || !page) return <main className="grid min-h-screen place-items-center bg-[#f2f4f7]"><p className="text-[#667085]">正在打开文档…</p></main>;
   return (
-    <main className="flex h-screen min-w-[900px] flex-col overflow-hidden bg-[#f2f4f7]">
-      <header className="flex h-16 shrink-0 items-center gap-4 border-b border-[#dfe3ea] bg-white px-4">
-        <Link href="/documents" className="rounded-lg p-2 hover:bg-[#f2f4f7]"><ArrowLeft size={19} /></Link><Brand /><span className="h-6 w-px bg-[#dfe3ea]" />
-        <input value={doc.name} onChange={(event) => setDoc({ ...doc, name: event.target.value })} onBlur={() => void save()} className="min-w-0 max-w-64 rounded px-2 py-1 font-medium outline-none hover:bg-[#f2f4f7] focus:bg-[#eef2ff]" />
-        <span className="mr-auto text-xs text-[#667085]">{notice || (status === "saving" ? "保存中…" : status === "dirty" ? "有未保存更改" : status === "error" ? "保存失败" : "已保存")}</span>
+    <main className="flex h-[100dvh] min-w-0 flex-col overflow-hidden bg-[#f2f4f7]">
+      <header className="flex h-14 shrink-0 items-center gap-1 border-b border-[#dfe3ea] bg-white px-2 sm:h-16 sm:gap-4 sm:px-4">
+        <Link href="/documents" className="rounded-lg p-2 hover:bg-[#f2f4f7]"><ArrowLeft size={19} /></Link><span className="hidden sm:block"><Brand /></span><span className="hidden h-6 w-px bg-[#dfe3ea] sm:block" />
+        <input aria-label="文档名称" value={doc.name} onChange={(event) => setDoc({ ...doc, name: event.target.value })} onBlur={() => void save()} className="min-w-0 flex-1 rounded px-2 py-1 text-sm font-medium outline-none hover:bg-[#f2f4f7] focus:bg-[#eef2ff] sm:max-w-64 sm:flex-none sm:text-base" />
+        <span className="mr-auto hidden text-xs text-[#667085] lg:block">{notice || (status === "saving" ? "保存中…" : status === "dirty" ? "有未保存更改" : status === "error" ? "保存失败" : "已保存")}</span>
         <button onClick={() => void save()} className="rounded-lg p-2 hover:bg-[#f2f4f7]" title="保存"><Save size={18} /></button>
-        <button disabled={exporting} onClick={() => void createPdf(undefined, `${doc.name || "文档"}.pdf`)} className="flex h-10 items-center gap-2 rounded-lg bg-[#315ee7] px-4 text-sm font-semibold text-white hover:bg-[#2346bb]"><Download size={17} />{exporting ? "处理中…" : initialMode === "merge" ? "导出合并 PDF" : "导出 PDF"}<ChevronDown size={15} /></button>
-        <button disabled={exporting} onClick={() => void exportImages()} className="h-10 rounded-lg border border-[#d8deea] px-3 text-sm">导出图片</button>
+        <div className="flex overflow-hidden rounded-lg bg-[#315ee7] text-white"><button disabled={exporting} aria-label="导出全部 PDF" onClick={() => void createPdf(undefined, `${doc.name || "文档"}.pdf`)} className="flex h-10 items-center gap-2 px-3 text-sm font-semibold hover:bg-[#2346bb] sm:px-4"><Download size={17} /><span className="hidden sm:inline">{exporting ? "处理中…" : initialMode === "merge" ? "导出合并 PDF" : "导出 PDF"}</span></button><button type="button" disabled={exporting} aria-label="选择导出 PDF 页面" onClick={() => setExportPagesFormat("pdf")} className="border-l border-white/25 px-2 hover:bg-[#2346bb]"><ChevronDown size={15} /></button></div>
+        <div className="hidden overflow-hidden rounded-lg border border-[#d8deea] bg-white sm:flex"><button disabled={exporting} onClick={() => void exportImages()} className="h-10 px-3 text-sm hover:bg-[#f2f4f7]">导出图片</button><button type="button" disabled={exporting} aria-label="选择导出图片页面" onClick={() => setExportPagesFormat("image")} className="border-l border-[#d8deea] px-2 hover:bg-[#f2f4f7]"><ChevronDown size={15} /></button></div>
       </header>
       <PdfTaskBar mode={initialMode} pageCount={draft.pages.length} assetCount={doc.assets.length} selectedCount={splitSelection.size} exporting={exporting} onSelectAll={() => selectPattern("all")} onSelectOdd={() => selectPattern("odd")} onSelectEven={() => selectPattern("even")} onClear={() => selectPattern("none")} onExportCombined={() => void createPdf(draft.pages.filter((item) => splitSelection.has(item.id)).map((item) => item.id), `${doc.name}-所选页面.pdf`)} onExportSeparate={() => void exportSeparatePages()} />
-      <div className="flex h-14 shrink-0 items-center gap-2 border-b border-[#dfe3ea] bg-white px-4 shadow-[0_1px_0_rgba(23,34,59,.02)]">
-        <div className="flex items-center gap-1">{toolGroups.map((group, groupIndex) => <div key={group[0].id} className="flex items-center gap-1">{groupIndex > 0 && <span className="mx-1 h-6 w-px bg-[#e5e9f0]" />}{group.map((item) => <button key={item.id} type="button" aria-pressed={tool === item.id} title={`${item.label}${item.shortcut ? `（${item.shortcut}）` : ""}`} onClick={() => { if (item.id === "image") imageInput.current?.click(); else if (item.id === "signature") setSignature(true); else setTool(item.id); }} className={`flex h-9 items-center gap-2 rounded-xl px-3 text-sm transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-95 ${tool === item.id ? "bg-[#315ee7] font-semibold text-white shadow-sm" : "text-[#344054] hover:bg-[#f2f4f7] hover:text-[#17223b]"}`}><item.icon size={16} strokeWidth={tool === item.id ? 2.4 : 2} />{item.label}</button>)}</div>)}</div>
+      <div className="flex h-13 shrink-0 items-center gap-1 overflow-x-auto border-b border-[#dfe3ea] bg-white px-2 shadow-[0_1px_0_rgba(23,34,59,.02)] sm:h-14 sm:gap-2 sm:px-4">
+        <button onClick={() => setMobilePanel(mobilePanel === "pages" ? null : "pages")} className="rounded-lg p-2 hover:bg-[#f2f4f7] sm:hidden" aria-label="页面缩略图"><PanelLeft size={18} /></button>
+        <div className="flex items-center gap-1">{toolGroups.map((group, groupIndex) => <div key={group[0].id} className="flex items-center gap-1">{groupIndex > 0 && <span className="mx-1 h-6 w-px bg-[#e5e9f0]" />}{group.map((item) => <button key={item.id} type="button" aria-pressed={tool === item.id} title={`${item.label}${item.shortcut ? `（${item.shortcut}）` : ""}`} onClick={() => { if (item.id === "image") imageInput.current?.click(); else if (item.id === "signature") setSignature(true); else setTool(item.id); }} className={`flex h-9 shrink-0 items-center gap-2 rounded-xl px-2.5 text-sm transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-95 sm:px-3 ${tool === item.id ? "bg-[#315ee7] font-semibold text-white shadow-sm" : "text-[#344054] hover:bg-[#f2f4f7] hover:text-[#17223b]"}`}><item.icon size={16} strokeWidth={tool === item.id ? 2.4 : 2} /><span className="hidden md:inline">{item.label}</span></button>)}</div>)}</div>
         <input ref={imageInput} hidden type="file" accept="image/png,image/jpeg" onChange={async (event) => { const file = event.target.files?.[0]; if (file) addMedia(await fileDataUrl(file), "image"); }} />
         <span className="hidden max-w-72 truncate rounded-lg bg-[#f8f9fb] px-2.5 py-1.5 text-xs text-[#667085] 2xl:block"><strong className="font-semibold text-[#344054]">{activeTool.label}</strong> · {activeTool.hint}</span>
         <span className="mx-1 h-6 w-px bg-[#dfe3ea]" /><button aria-label="撤销" disabled={!history.length} onClick={undo} className="rounded-lg p-2 transition-colors hover:bg-[#f2f4f7]" title="撤销（⌘Z）"><Undo2 size={18} /></button><button aria-label="重做" disabled={!future.length} onClick={redo} className="rounded-lg p-2 transition-colors hover:bg-[#f2f4f7]" title="重做（⇧⌘Z）"><Redo2 size={18} /></button>
-        <div className="ml-auto flex items-center gap-1 rounded-xl border border-[#e5e9f0] bg-[#f8f9fb] p-0.5"><button aria-label="缩小 PDF" onClick={() => setZoom(zoom - 0.1)} className="rounded-lg p-1.5 transition-colors hover:bg-white hover:shadow-sm"><ZoomOut size={17} /></button><span className="w-14 text-center text-xs font-medium tabular-nums" title="可在文档区域使用触控板双指缩放">{Math.round(zoom * 100)}%</span><button aria-label="放大 PDF" onClick={() => setZoom(zoom + 0.1)} className="rounded-lg p-1.5 transition-colors hover:bg-white hover:shadow-sm"><ZoomIn size={17} /></button></div>
+        <div className="ml-auto flex items-center gap-1 rounded-xl border border-[#e5e9f0] bg-[#f8f9fb] p-0.5"><button aria-label="缩小 PDF" onClick={() => setZoom(zoom - 0.1)} className="rounded-lg p-1.5 transition-colors hover:bg-white hover:shadow-sm"><ZoomOut size={17} /></button><span className="hidden w-14 text-center text-xs font-medium tabular-nums sm:block" title="可在文档区域使用触控板双指缩放">{Math.round(zoom * 100)}%</span><button aria-label="放大 PDF" onClick={() => setZoom(zoom + 0.1)} className="rounded-lg p-1.5 transition-colors hover:bg-white hover:shadow-sm"><ZoomIn size={17} /></button><button onClick={() => setMobilePanel(mobilePanel === "properties" ? null : "properties")} className="rounded-lg p-1.5 transition-colors hover:bg-white sm:hidden" aria-label="页面与对象属性"><SlidersHorizontal size={17} /></button></div>
       </div>
       <div className="flex min-h-0 flex-1">
-        <PageSidebar pages={draft.pages} assets={doc.assets} activeId={page.id} splitMode={initialMode === "split"} selectedIds={splitSelection} onToggle={toggleSplit} onReorder={reorder} onAddFiles={(files) => void mergeFiles(files)} onSelect={(pageId) => { setCurrentPage(pageId); document.getElementById(`page-${pageId}`)?.scrollIntoView({ behavior: "smooth" }); }} />
-        <section ref={documentViewport} aria-label="PDF 文档区域，可使用触控板双指缩放" className="min-w-0 flex-1 overflow-auto px-8 py-10 [overscroll-behavior:contain]"><div className="mx-auto flex w-fit flex-col gap-10">{draft.pages.map((item, index) => <LazyPage key={item.id} page={item} assets={doc.assets} onVisible={setCurrentPage} priority={index === 0} />)}</div></section>
-        <aside className="w-64 shrink-0 overflow-y-auto border-l border-[#dfe3ea] bg-white p-5">
+        <div className={`${mobilePanel === "pages" ? "fixed inset-x-0 bottom-0 top-[108px] z-40 block bg-[#f8f9fb] shadow-2xl" : "hidden"} sm:static sm:block sm:w-48 sm:shrink-0`}><PageSidebar pages={draft.pages} assets={doc.assets} activeId={page.id} splitMode={initialMode === "split"} selectedIds={splitSelection} onToggle={toggleSplit} onReorder={reorder} onAddFiles={(files) => void mergeFiles(files)} onSelect={(pageId) => { setCurrentPage(pageId); setMobilePanel(null); document.getElementById(`page-${pageId}`)?.scrollIntoView({ behavior: "smooth" }); }} /></div>
+        <section ref={documentViewport} aria-label="PDF 文档区域，可使用触控板双指缩放" className="min-w-0 flex-1 overflow-auto px-3 py-5 sm:px-8 sm:py-10 [overscroll-behavior:contain]"><div className="mx-auto flex w-fit flex-col gap-6 sm:gap-10">{draft.pages.map((item, index) => <LazyPage key={item.id} page={item} assets={doc.assets} onVisible={setCurrentPage} priority={index === 0} />)}</div></section>
+        <aside className={`${mobilePanel === "properties" ? "fixed inset-x-0 bottom-0 top-[108px] z-40 block shadow-2xl" : "hidden"} w-full overflow-y-auto border-l border-[#dfe3ea] bg-white p-5 sm:static sm:block sm:w-64 sm:shrink-0`}>
           {selected ? <ObjectProperties object={selected} onChange={(changes) => updateObject(selected.id, changes)} onDelete={() => { commit((value) => ({ ...value, objects: value.objects.filter((object) => object.id !== selected.id) })); select(null); }} /> : <><h2 className="font-semibold">页面</h2><div className="mt-6 space-y-3"><p className="text-sm text-[#667085]">第 {draft.pages.findIndex((item) => item.id === page.id) + 1} 页，共 {draft.pages.length} 页</p><button onClick={() => commit((value) => ({ ...value, pages: value.pages.map((item) => item.id === page.id ? { ...item, rotation: ((item.rotation + 90) % 360) as DraftPage["rotation"] } : item) }))} className="flex w-full items-center gap-2 rounded-lg border border-[#d8deea] px-3 py-2 text-sm hover:bg-[#f2f4f7]"><RotateCw size={16} />顺时针旋转</button><button disabled={draft.pages.length === 1} onClick={() => { commit((value) => ({ ...value, pages: value.pages.filter((item) => item.id !== page.id), objects: value.objects.filter((object) => object.pageId !== page.id) })); setSplitSelection((value) => { const next = new Set(value); next.delete(page.id); return next; }); setCurrentPage(draft.pages.find((item) => item.id !== page.id)?.id ?? ""); }} className="flex w-full items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm text-red-600 hover:bg-red-50"><Trash2 size={16} />删除这一页</button><p className="pt-3 text-xs leading-5 text-[#8a93a5]">拖动左侧缩略图调整页序。拆分模式可直接勾选需要的页面。</p></div></>}
         </aside>
       </div>
       {signature && <SignatureDialog onClose={() => setSignature(false)} onDone={(data) => { addMedia(data, "signature"); setSignature(false); }} />}
+      {exportPagesFormat && <ExportPagesDialog pageCount={draft.pages.length} format={exportPagesFormat} initialPage={Math.max(1, draft.pages.findIndex((item) => item.id === page.id) + 1)} exporting={exporting} onClose={() => setExportPagesFormat(null)} onExport={exportSelectedPages} />}
     </main>
   );
 }

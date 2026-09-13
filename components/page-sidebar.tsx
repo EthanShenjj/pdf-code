@@ -80,7 +80,7 @@ export function PageSidebar({ pages, assets, activeId, splitMode, selectedIds, o
   const inputRef = useRef<HTMLInputElement>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   return (
-    <aside className="w-48 shrink-0 overflow-y-auto border-r border-[#dfe3ea] bg-[#f8f9fb] py-4">
+    <aside className="h-full w-full overflow-y-auto border-r border-[#dfe3ea] bg-[#f8f9fb] py-4 sm:w-48 sm:shrink-0">
       <DndContext sensors={sensors} onDragEnd={onReorder}>
         <SortableContext items={pages.map((page) => page.id)} strategy={verticalListSortingStrategy}>
           {pages.map((page, index) => (

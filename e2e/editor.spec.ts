@@ -36,6 +36,20 @@ test("imports, edits, autosaves and restores a PDF", async ({ page }) => {
   await page.getByRole("button", { name: "绿色高亮" }).click();
   await expect(page.locator('[data-editor-object-type="highlight"]')).toHaveCount(1);
   await expect(page.getByRole("button", { name: "高亮" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "矩形" }).click();
+  await page.mouse.move(canvasBox!.x + 60, canvasBox!.y + 80);
+  await page.mouse.down();
+  await page.mouse.move(canvasBox!.x + 210, canvasBox!.y + 160);
+  await page.mouse.up();
+  const rectangle = page.locator('[data-editor-object-type="rect"]');
+  await expect(rectangle).toHaveCount(1);
+  await expect(rectangle).toHaveCSS("width", /1[4-6]\dpx/);
+  await page.getByRole("button", { name: "线条" }).click();
+  await page.mouse.move(canvasBox!.x + 280, canvasBox!.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(canvasBox!.x + 130, canvasBox!.y + 110);
+  await page.mouse.up();
+  await expect(page.locator('[data-editor-object-type="line"]')).toHaveCount(1);
   const pinchPrevented = await canvas.evaluate((element) => !element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, ctrlKey: true, deltaY: -80, clientX: 500, clientY: 400 })));
   expect(pinchPrevented).toBe(true);
   await expect(page.getByText("122%", { exact: true })).toBeVisible();
@@ -72,7 +86,7 @@ test("merges several PDFs and accepts another file", async ({ page }) => {
   await expect(page.getByText("第 1 页，共 4 页")).toBeVisible();
   await page.locator('aside input[type="file"]').setInputFiles(path.resolve("fixtures/sample.pdf"));
   await expect(page.getByText("已加入 1 个 PDF、1 页")).toBeVisible();
-  await expect(page.getByText("第 1 页，共 5 页")).toBeVisible();
+  await expect(page.getByText("第 5 页，共 5 页")).toBeVisible();
 });
 
 test("selects and exports split pages", async ({ page }) => {
@@ -80,15 +94,28 @@ test("selects and exports split pages", async ({ page }) => {
   const card = page.getByRole("heading", { name: "拆分 PDF" }).locator("..");
   await card.locator('input[type="file"]').setInputFiles(path.resolve("fixtures/sample-3-pages.pdf"));
   await expect(page).toHaveURL(/mode=split/);
-  await expect(page.getByText("已选择 3/3 页")).toBeVisible();
+  await expect(page.getByText("已选择 3/3", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "偶数页" }).click();
-  await expect(page.getByText("已选择 1/3 页")).toBeVisible();
+  await expect(page.getByText("已选择 1/3", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "奇数页" }).click();
-  await expect(page.getByText("已选择 2/3 页")).toBeVisible();
+  await expect(page.getByText("已选择 2/3", { exact: true })).toBeVisible();
   const pdfDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: "导出所选 PDF" }).click();
   await pdfDownload;
   const zipDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: "逐页 ZIP" }).click();
   await zipDownload;
+});
+
+test("exports selected PDF pages from the editor", async ({ page }) => {
+  await page.goto("/");
+  const card = page.getByRole("heading", { name: "编辑 PDF" }).locator("..");
+  await card.locator('input[type="file"]').setInputFiles(path.resolve("fixtures/sample-3-pages.pdf"));
+  await expect(page.getByText("第 1 页，共 3 页")).toBeVisible();
+  await page.getByRole("button", { name: "选择导出 PDF 页面" }).click();
+  const dialog = page.getByRole("dialog", { name: "选择要导出的页面" });
+  await dialog.getByRole("button", { name: "第 2 页" }).click();
+  const download = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "导出 2 页PDF" }).click();
+  await download;
 });

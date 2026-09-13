@@ -1,6 +1,7 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { Check, Copy, Palette, Trash2, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { EditorObject } from "@/lib/editor-types";
 
 const objectNames: Record<EditorObject["type"], string> = {
@@ -22,6 +23,25 @@ export function ObjectProperties({ object, onChange, onDelete }: {
 }) {
   const hasColor = object.type !== "image" && object.type !== "signature";
   const colors = object.type === "highlight" ? highlightColors : standardColors;
+  const [customColorOpen, setCustomColorOpen] = useState(false);
+  const [hexValue, setHexValue] = useState(object.color.toUpperCase());
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => { setHexValue(object.color.toUpperCase()); }, [object.id, object.color]);
+
+  function updateHex(value: string) {
+    const normalized = value.startsWith("#") ? value : `#${value}`;
+    setHexValue(normalized.toUpperCase());
+    if (/^#[0-9A-F]{6}$/i.test(normalized)) onChange({ color: normalized });
+  }
+
+  async function copyHex() {
+    try {
+      await navigator.clipboard.writeText(object.color.toUpperCase());
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch { /* Clipboard access is optional. */ }
+  }
 
   return (
     <div>
@@ -53,10 +73,13 @@ export function ObjectProperties({ object, onChange, onDelete }: {
           <div className="flex items-center justify-between"><span className="text-xs font-medium text-[#5f6b7c]">颜色</span><span className="text-[11px] font-medium tabular-nums text-[#98a2b3]">{object.color.toUpperCase()}</span></div>
           <div className="mt-3 flex items-center gap-2">
             {colors.map((color) => <button key={color} type="button" aria-label={`设置颜色 ${color}`} aria-pressed={object.color.toLowerCase() === color} onClick={() => onChange({ color })} className={`h-7 w-7 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(23,34,59,.12)] transition hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315ee7] ${object.color.toLowerCase() === color ? "ring-2 ring-[#315ee7] ring-offset-1" : ""}`} style={{ backgroundColor: color }} />)}
-            <label aria-label="自定义颜色" className="relative ml-auto grid h-7 w-7 cursor-pointer place-items-center rounded-full border border-dashed border-[#aeb6c4] bg-white text-base leading-none text-[#667085] transition hover:border-[#315ee7] hover:text-[#315ee7]">+
-              <input type="color" value={object.color} onChange={(event) => onChange({ color: event.target.value })} className="absolute inset-0 cursor-pointer opacity-0" />
-            </label>
+            <button type="button" aria-label="自定义颜色" aria-expanded={customColorOpen} onClick={() => setCustomColorOpen((value) => !value)} className={`ml-auto flex h-7 items-center gap-1 rounded-lg border px-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315ee7] ${customColorOpen ? "border-[#315ee7] bg-[#eef2ff] text-[#2346bb]" : "border-[#d8deea] bg-white text-[#5f6b7c] hover:border-[#7b9af2] hover:text-[#315ee7]"}`}><Palette size={13} />自定义</button>
           </div>
+          {customColorOpen && <div className="mt-3 rounded-xl border border-[#dce4f8] bg-white p-3 shadow-[0_8px_18px_rgba(49,94,231,.08)]">
+            <div className="flex items-center justify-between"><span className="text-xs font-semibold text-[#344054]">自定义颜色</span><button type="button" aria-label="收起自定义颜色" onClick={() => setCustomColorOpen(false)} className="rounded-md p-1 text-[#667085] hover:bg-[#f2f4f7] hover:text-[#17223b]"><X size={14} /></button></div>
+            <div className="mt-3 flex items-center gap-3"><span aria-hidden="true" className="h-10 w-10 shrink-0 rounded-xl border-2 border-white shadow-[0_0_0_1px_rgba(23,34,59,.16)]" style={{ backgroundColor: object.color }} /><div className="min-w-0 flex-1"><label htmlFor={`hex-${object.id}`} className="block text-[11px] font-medium text-[#667085]">Hex 色值</label><div className="mt-1 flex h-9 overflow-hidden rounded-lg border border-[#cfd7e6] bg-white focus-within:border-[#315ee7] focus-within:ring-2 focus-within:ring-[#315ee7]/10"><input id={`hex-${object.id}`} aria-label="Hex 色值" value={hexValue} onChange={(event) => updateHex(event.target.value)} maxLength={7} spellCheck={false} className="min-w-0 flex-1 bg-transparent px-2.5 text-sm font-medium uppercase tracking-[.04em] text-[#17223b] outline-none" /><button type="button" aria-label="复制颜色值" onClick={() => void copyHex()} className="grid w-9 place-items-center border-l border-[#e5e9f0] text-[#667085] transition hover:bg-[#f6f8fc] hover:text-[#315ee7]">{copied ? <Check size={15} /> : <Copy size={14} />}</button></div></div></div>
+            <p className="mt-2 text-[11px] leading-4 text-[#8a93a5]">输入 6 位 Hex 色值，例如 #315EE7。</p>
+          </div>}
         </section>}
 
         <section className="rounded-xl border border-[#e7eaf0] bg-[#fafbfc] p-3">
